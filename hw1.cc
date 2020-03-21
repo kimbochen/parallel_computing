@@ -261,12 +261,10 @@ string findActionSequence(vector<string> &initGameMap)
     Move moves[4] = {
         { 'W', -1, 0 }, { 'A', 0, -1 }, { 'S', 1, 0 }, { 'D', 0, 1 }
     };
-    std::unordered_map<std::string, std::string> actionSeq;
 
 #ifndef DEBUG
     Q.emplace(initState);
     visited.insert(initState);
-    actionSeq[initState.hashKey] = "";
 
     while (!Q.empty()) {
         State currState = Q.front();
@@ -278,18 +276,18 @@ string findActionSequence(vector<string> &initGameMap)
             if (!isValidMove(currState, m)) continue;
 
             State newState = currState + m;
-            string newSeq = actionSeq[currState.hashKey] + m.key;
 
             if (!visited.contain(newState)) {
                 visited.insert(newState);
                 nodes.emplace_back(newState.keyNode);
 
-                if (isSolution(newState)) return newSeq;
-
-                if (!isDeadlock(newState)) {
-                    Q.emplace(newState);
-                    actionSeq[newState.hashKey] = newSeq;
+                if (isSolution(newState)) {
+                    string ans = getActionSequence(newState);
+                    for (auto& n : nodes) delete n;
+                    return ans;
                 }
+
+                if (!isDeadlock(newState)) Q.emplace(newState);
             }
             else
                 delete newState.keyNode;
@@ -300,7 +298,6 @@ string findActionSequence(vector<string> &initGameMap)
 #ifdef DEBUG
     Q.emplace(initState);
     visited.insert(initState);
-    actionSeq[initState.hashKey] = "";
 
     using std::cout;
 
@@ -323,11 +320,9 @@ string findActionSequence(vector<string> &initGameMap)
             }
 
             State newState = currState + m;
-            string newSeq = actionSeq[currState.hashKey] + m.key;
 
             cout << "New State:\n";
             newState.debug();
-            cout << "New sequence: " << newSeq << '\n';
 
             if (!visited.contain(newState)) {
                 cout << "Not visited!\n";
@@ -336,14 +331,17 @@ string findActionSequence(vector<string> &initGameMap)
 
                 if (isSolution(newState)) {
                     cout << "Solution!\n";
-                    return newSeq;
+                    string ans = getActionSequence(newState);
+
+                    for (auto& n : nodes) delete n;
+
+                    return ans;
                 }
                 else cout << "Not solution!\n";
 
                 if (!isDeadlock(newState)) {
                     cout << "Not deadlock!\n";
                     Q.emplace(newState);
-                    actionSeq[newState.hashKey] = newSeq;
                 }
             }
             else {
