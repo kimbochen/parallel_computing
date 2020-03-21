@@ -112,7 +112,7 @@ class State {
 public:
     State() {}
 
-    State(Coord& playerPos_, vector<Coord>& boxPos_, Node* prevNode_ = nullptr, char key_='\0')
+    State(Coord& playerPos_, vector<Coord>& boxPos_, Node* prevNode = nullptr, char key = '\0')
     {
         std::ostringstream os;
 
@@ -124,7 +124,7 @@ public:
         hashKey = os.str();
         playerPos = playerPos_;
         boxPos = boxPos_;
-        keyNode = new Node(prevNode_, key_);
+        keyNode = new Node(prevNode, key);
     }
 
     State operator + (const Move& m)
@@ -156,14 +156,14 @@ public:
         cout << "  playerPos: ";
         playerPos.debug();
 
-        cout << " key: " << keyNode->key << '\n';
+        cout << " keyNode: " << keyNode->key << '\n';
     }
 #endif
 
     Coord playerPos;
     vector<Coord> boxPos;
     string hashKey;
-    Node *keyNode;
+    Node* keyNode;
 };
 
 class Record {
@@ -226,7 +226,7 @@ bool isSolution(State& state, GameMap& gameMap)
     return true;
 }
 
-string getActionSeq(const State& state)
+string getActionSequence(const State& state)
 {
     Node *current = state.keyNode;
     string actionSeq;
@@ -246,7 +246,7 @@ bool isDeadlock(const State& state, const GameMap& gameMap)
     return false;
 }
 
-string findActionSequence(GameMap& gameMap)
+string findActionSequence(GameMap& gameMap, vector<Node*> &nodes)
 {
     State initState = State(gameMap.playerPos, gameMap.boxPos);
     Record visited;
@@ -254,7 +254,7 @@ string findActionSequence(GameMap& gameMap)
     Move moves[4] = {
         { 'W', -1, 0 }, { 'A', 0, -1 }, { 'S', 1, 0 }, { 'D', 0, 1 }
     };
-
+    std::unordered_map<std::string, std::string> actionSeq;
 #ifdef STATE
     gameMap.debug();
     initState.debug();
@@ -313,12 +313,12 @@ string findActionSequence(GameMap& gameMap)
     State testState(gameMap.playerPos, gameMap.targetPos);
     std::cout << "Test state: " << isSolution(testState, gameMap) << '\n';
 #endif
-
     Q.emplace(initState);
     visited.insert(initState);
+    actionSeq[initState.hashKey] = "";
 
-    // while (!Q.empty()) {
-    for (int i = 0; i < 5; i++) {
+    /*
+    while (!Q.empty()) {
         State currState = Q.front();
         Q.pop();
 
@@ -328,21 +328,74 @@ string findActionSequence(GameMap& gameMap)
             if (!isValidMove(currState, m, gameMap)) continue;
 
             State newState = currState + m;
-
-            std::cout << getActionSeq(newState) << '\n';
+            string newSeq = actionSeq[currState.hashKey] + m.key;
 
             if (!visited.contain(newState)) {
+                nodes.emplace_back(newState.keyNode);
+
                 if (isSolution(newState, gameMap))
-                    return getActionSeq(newState);
+                    // return getActionSequence(newState);
+                    return newSeq;
 
                 if (!isDeadlock(newState, gameMap)) {
                     Q.emplace(newState);
                     visited.insert(newState);
+                    actionSeq[newState.hashKey] = newSeq;
                 }
             }
+            else delete newState.keyNode;
         }
 
     }
+    */
+
+#ifdef ALGO
+    using std::cout;
+
+    gameMap.debug();
+
+    while (!Q.empty()) {
+        State currState = Q.front();
+        Q.pop();
+
+        cout << "Current state:\n";
+        currState.debug();
+
+        for (int i = 0; i < 4; i++) {
+            Move m = moves[i];
+
+            if (!isValidMove(currState, m, gameMap)) {
+                cout << "Invalid move: " << m.key << '\n';
+                continue;
+            }
+
+            State newState = currState + m;
+            string newSeq = actionSeq[currState.hashKey] + m.key;
+
+            cout << "New State:\n";
+            newState.debug();
+            cout << newSeq << '\n';
+
+            if (!visited.contain(newState)) {
+                cout << "Not visited!\n";
+                nodes.emplace_back(newState.keyNode);
+
+                if (isSolution(newState, gameMap)) {
+                    cout << "Solution!\n";
+                    return newSeq;
+                }
+                else cout << "Not solution!\n";
+
+                if (!isDeadlock(newState, gameMap)) {
+                    Q.emplace(newState);
+                    visited.insert(newState);
+                    actionSeq[newState.hashKey] = newSeq;
+                }
+            }
+            else delete newState.keyNode;
+        }
+    }
+#endif
 
     return "";
 }
@@ -378,10 +431,15 @@ void createMapData(char* &mapfile, GameMap& gameMap)
 int main(int argc, char* argv[])
 {
     GameMap gameMap;
+    vector<Node*> nodes;
 
     createMapData(argv[1], gameMap);
 
-    std::cout << findActionSequence(gameMap);
+    std::cout << findActionSequence(gameMap, nodes);
+
+    for (auto& n : nodes) {
+        delete n;
+    }
 
     return 0;
 }
