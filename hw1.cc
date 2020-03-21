@@ -37,14 +37,12 @@ public:
     {
         return (a.x == b.x && a.y == b.y);
     }
-
 #ifdef DEBUG
     void debug() const
     {
         std::cout << '(' << x << ',' << y << ')';
     }
 #endif
-
     int x, y;
 };
 
@@ -61,7 +59,7 @@ struct Move {
 
 class Node {
 public:
-    Node(Node* prevNode_, char key_)
+    Node(Node* prevNode_ = nullptr, char key_ = '\0')
     {
         prevNode = prevNode_;
         key = key_;
@@ -71,26 +69,31 @@ public:
     char key;
 };
 
-struct MapData {
-    vector<string> gameMap;
-    vector<Coord> boxPos;
-    Coord playerPos;
-};
-
 class State {
 public:
     State() {}
 
-    State(MapData &mapData, Node* prevNode = nullptr, char key = '\0')
+    State (vector<string> &initGameMap)
     {
-        gameMap = mapData.gameMap;
-        playerPos = mapData.playerPos;
-        boxPos = mapData.boxPos;
-        keyNode = new Node(prevNode, key);
+        gameMap = initGameMap;
+
+        for (int i = 1; i < initGameMap.size() - 1; i++) {
+            for (int j = 1; j < initGameMap[0].size() - 1; j++) {
+                char c = initGameMap[i][j];
+
+                if (c == 'x' || c == 'X')
+                    boxPos.emplace_back(i, j);
+                else if (c == 'o' || c == 'O')
+                    playerPos = Coord(i, j);
+            }
+        }
+
+        keyNode = new Node();
+
         computeHashKey();
     }
 
-    State operator + (const Move& m) const
+    State operator + (const Move &m) const
     {
         State state;
         Coord movedBoxPos = playerPos + 2 * m.dir;
@@ -98,13 +101,12 @@ public:
         state.gameMap = gameMap;
         state.boxPos = boxPos;
         state.playerPos = playerPos + m.dir;
-        state.keyNode = new Node(keyNode, m.key);
 
         char &prevPlayerTile = state.gameMap[playerPos.x][playerPos.y];
-        prevPlayerTile = (prevPlayerTile == 'o') ? ' ' : '.';
-
         char &playerTile = state.gameMap[state.playerPos.x][state.playerPos.y];
         char &boxTile = state.gameMap[movedBoxPos.x][movedBoxPos.y];
+
+        prevPlayerTile = (prevPlayerTile == 'o') ? ' ' : '.';
 
         if (playerTile == ' ')
             playerTile = 'o';
@@ -122,6 +124,7 @@ public:
             }
         }
 
+        state.keyNode = new Node(keyNode, m.key);
         state.computeHashKey();
 
         return state;
@@ -198,7 +201,7 @@ public:
     std::unordered_set<std::string> history;
 };
 
-bool isValidMove(const State& state, const Move& m)
+bool isValidMove(const State &state, const Move &m)
 {
     Coord newPlayerPos = state.playerPos + m.dir;
     char playerTile = state.gameMap[newPlayerPos.x][newPlayerPos.y];
@@ -208,20 +211,18 @@ bool isValidMove(const State& state, const Move& m)
             Coord newBoxPos = state.playerPos + 2 * m.dir;
             char boxTile = state.gameMap[newBoxPos.x][newBoxPos.y];
 
-            return (boxTile != '#');
+            return (boxTile == ' ' || boxTile == '.');
         }
         else
             return true;
     }
-
-    return false;
+    else
+        return false;
 }
 
 bool isSolution(const State& state)
 {
-    int n = state.gameMap.size() - 1;
-
-    for (int i = 1; i < n; i++) {
+    for (int i = 1; i < state.gameMap.size() - 1; i++) {
         string s = state.gameMap[i];
         if (s.find_first_of(".xO") != string::npos) {
             return false;
@@ -251,9 +252,9 @@ bool isDeadlock(const State& state)
     return false;
 }
 
-string findActionSequence(MapData &mapData, const vector<Coord> &targetPos)
+string findActionSequence(vector<string> &initGameMap)
 {
-    State initState = State(mapData);
+    State initState = State(initGameMap);
     Record visited;
     queue<State> Q;
     vector<Node*> nodes;
@@ -262,11 +263,11 @@ string findActionSequence(MapData &mapData, const vector<Coord> &targetPos)
     };
     std::unordered_map<std::string, std::string> actionSeq;
 
+#ifndef DEBUG
     Q.emplace(initState);
     visited.insert(initState);
     actionSeq[initState.hashKey] = "";
 
-#ifndef ALGO
     while (!Q.empty()) {
         State currState = Q.front();
         Q.pop();
@@ -283,22 +284,20 @@ string findActionSequence(MapData &mapData, const vector<Coord> &targetPos)
                 visited.insert(newState);
                 nodes.emplace_back(newState.keyNode);
 
-                if (isSolution(newState)) {
-                    for (auto& n : nodes) delete n;
-                    return newSeq;
-                }
+                if (isSolution(newState)) return newSeq;
 
                 if (!isDeadlock(newState)) {
                     Q.emplace(newState);
                     actionSeq[newState.hashKey] = newSeq;
                 }
             }
-            else delete newState.keyNode;
+            else
+                delete newState.keyNode;
         }
     }
 #endif
 
-#ifdef ALGO
+#ifdef DEBUG
     Q.emplace(initState);
     visited.insert(initState);
     actionSeq[initState.hashKey] = "";
@@ -360,42 +359,28 @@ string findActionSequence(MapData &mapData, const vector<Coord> &targetPos)
     return "";
 }
 
-void createMapData(char* &mapfile, MapData &mapData, vector<Coord> &targetPos)
+void createMapData(char* &mapfile, vector<string>& initGameMap)
 {
     std::ifstream testcase(mapfile);
     string line;
 
     if (testcase.is_open()) {
         while (std::getline(testcase, line)) {
-            mapData.gameMap.emplace_back(line);
+            initGameMap.emplace_back(line);
         }
         testcase.close();
     } 
     else 
         std::cerr << "Unable to open file.\n";
-
-    for (int i = 0; i < mapData.gameMap.size(); i++) {
-        for (int j = 0; j < mapData.gameMap[i].size(); j++) {
-            char c = mapData.gameMap[i][j];
-
-            if (c == 'x' || c == 'X')
-                mapData.boxPos.emplace_back(i, j);
-            if (c == '.' || c == 'X' || c == 'O')
-                targetPos.emplace_back(i, j);
-            if (c == 'o' || c == 'O')
-                mapData.playerPos = Coord(i, j);
-        }
-    }
 }
 
 int main(int argc, char* argv[])
 {
-    MapData mapData;
-    vector<Coord> targetPos;
+    vector<string> initGameMap;
 
-    createMapData(argv[1], mapData, targetPos);
+    createMapData(argv[1], initGameMap);
 
-    std::cout << findActionSequence(mapData, targetPos) << '\n';
+    std::cout << findActionSequence(initGameMap) << '\n';
 
     return 0;
 }
