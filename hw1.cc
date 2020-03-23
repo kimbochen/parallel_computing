@@ -78,6 +78,25 @@ public:
             }
         }
 
+        // Compute tarPos
+        #pragma omp declare reduction (\
+            merge : std::vector<std::tuple<int, int>> : \
+            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
+        )
+
+        #pragma omp parallel default(none) shared(n, m, initField, tarPos)
+        {
+            int i, j;
+
+            #pragma omp for collapse(2) private(i, j) reduction(merge : tarPos)
+            for (i = 1; i < n; i++) {
+                for (j = 1; j < m; j++) {
+                    if (initField[i][j] == '.' || initField[i][j] == 'O')
+                        tarPos.emplace_back(i, j);
+                }
+            }
+        }
+
         // Initialize directions
         direction = {
             {'W', -1,  0},
@@ -133,7 +152,6 @@ public:
         int m = field[0].size() - 1;
         int i, j;
         std::vector<std::tuple<int, int>> boxPos;
-        std::vector<std::tuple<int, int>> tarPos;
 
         #pragma omp declare reduction (\
             merge : std::vector<std::tuple<int, int>> : \
@@ -147,8 +165,6 @@ public:
                 for (j = 1; j < m; j++) {
                     if (field[i][j] == 'x')
                             boxPos.emplace_back(i, j);
-                    else if (field[i][j] == '.' || field[i][j] == 'O')
-                            tarPos.emplace_back(i, j);
                 }
             }
         }
@@ -305,6 +321,7 @@ private:
     GameMap initField;
     int playerPosX, playerPosY, initH;
     std::vector<std::tuple<char, int, int>> direction;
+    std::vector<std::tuple<int, int>> tarPos;
 };
 
 int main(int argc, char* argv[])
