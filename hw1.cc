@@ -56,15 +56,21 @@ public:
         ss << inFile.rdbuf();
         boost::split(initField, ss.str(), boost::is_any_of("\n"));
 
-        // Find player position
+        // Find player position and target positions
         int n = initField.size() - 1;
         int m = initField[0].size() - 1;
 
-        #pragma omp parallel default(none) shared(initField, n, m, playerPosX, playerPosY)
+        #pragma omp declare reduction (\
+            merge : std::vector<std::tuple<int, int>> : \
+            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
+        )
+
+        #pragma omp parallel default(none) \
+        shared(initField, n, m, playerPosX, playerPosY, tarPos)
         {
             int i, j;
 
-            #pragma omp for collapse(2) private(i, j)
+            #pragma omp for collapse(2) private(i, j) reduction(merge : tarPos)
             for (i = 1; i < n; i++) {
                 for (j = 1; j < m; j++) {
                     if (initField[i][j] == 'o' || initField[i][j] == 'O') {
@@ -74,28 +80,14 @@ public:
                             playerPosY = j;
                         }
                     }
-                }
-            }
-        }
-
-        // Compute tarPos
-        #pragma omp declare reduction (\
-            merge : std::vector<std::tuple<int, int>> : \
-            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
-        )
-
-        #pragma omp parallel default(none) shared(n, m, initField, tarPos)
-        {
-            int i, j;
-
-            #pragma omp for collapse(2) private(i, j) reduction(merge : tarPos)
-            for (i = 1; i < n; i++) {
-                for (j = 1; j < m; j++) {
                     if (initField[i][j] == '.' || initField[i][j] == 'O')
                         tarPos.emplace_back(i, j);
                 }
             }
         }
+
+        // Initialize tarPos size
+        t = tarPos.size();
 
         // Initialize directions
         direction = {
@@ -150,7 +142,6 @@ public:
     {
         int n = field.size() - 1;
         int m = field[0].size() - 1;
-        int i, j;
         std::vector<std::tuple<int, int>> boxPos;
 
         #pragma omp declare reduction (\
@@ -158,28 +149,29 @@ public:
             omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
         )
 
-        #pragma omp parallel default(none) shared(i, j, n, m, field, boxPos, tarPos)
+        #pragma omp parallel default(none) shared(n, m, field, boxPos, tarPos)
         {
-            #pragma omp for collapse(2) reduction(merge : boxPos) reduction(merge : tarPos)
+            int i, j;
+            #pragma omp for collapse(2) private(i, j) reduction(merge : boxPos)
             for (i = 1; i < n; i++) {
                 for (j = 1; j < m; j++) {
                     if (field[i][j] == 'x')
-                            boxPos.emplace_back(i, j);
+                        boxPos.emplace_back(i, j);
                 }
             }
         }
 
         int b = boxPos.size();
-        int t = tarPos.size();
         int h = 0;
 
-        for (i = 0; i < b; i++) {
+        for (int i = 0; i < b; i++) {
             int bx = std::get<0>(boxPos[i]);
             int by = std::get<1>(boxPos[i]);
             int dist = INT_MAX;
 
-            #pragma omp parallel default(none) shared(i, j, t, bx, by, dist, boxPos, tarPos)
+            #pragma omp parallel default(none) shared(i, t, bx, by, dist, boxPos, tarPos)
             {
+                int j;
                 #pragma omp for private(j) reduction(min : dist)
                 for (j = 0; j < t; j++) {
                     int tx = std::get<0>(tarPos[i]);
@@ -319,7 +311,8 @@ public:
 private:
     std::string ans;
     GameMap initField;
-    int playerPosX, playerPosY, initH;
+    int playerPosX, playerPosY;
+    int t, initH;
     std::vector<std::tuple<char, int, int>> direction;
     std::vector<std::tuple<int, int>> tarPos;
 };
