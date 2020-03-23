@@ -1,5 +1,37 @@
+/*
+ * initState <- (H, initGrid, playerX, playerY, "")
+ * stateQueue <- initState
+ *
+ * while !stateQueue.empty() && !solved:
+ *     currState <- stateQueue.pop()
+ *     h, grid, x, y, seq = currState
+ *
+ *     for move in 4 possible moves:
+ *          dx, dy, key = move
+ *
+ *          if canMakeMove(currState, x, y, dx, dy):
+ *             newGrid = grid
+ *             makeMove(newGrid, x, y, dx, dy)
+ *          else:
+ *              continue
+ *
+ *          isVisited = (visited.find(newGrid) != visited.end())
+ *
+ *          if !isVisited:
+ *              visited.insert(newGrid)
+ *
+ *              if isSolved(newGrid):
+ *                  ans = seq + key
+ *                  solved = true
+ *
+ *              if !isDeadlock(newGrid, x+dx, y+dy):
+ *                  newH = h + heuristic(newGrid, x+dx, y+dy)
+ *                  stateQueue <- (newH, newGrid, x+dx, y+dy)
+ */
+
 #include <boost/algorithm/string.hpp>
 #include <boost/unordered_set.hpp>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <omp.h>
@@ -10,7 +42,7 @@
 #include <vector>
 
 using GameMap = std::vector<std::vector<char>>;
-using State = std::tuple<GameMap, int, int, std::string>;
+using State = std::tuple<int, GameMap, int, int, std::string>;
 
 class Game {
 public:
@@ -54,6 +86,9 @@ public:
             {'D',  0,  1}
         };
 
+        // Initialize h
+        initH = heuristic(initField);
+
         // Initialize answer string
         ans = "Not Solved!\n";
     }
@@ -90,6 +125,59 @@ public:
             C3 = (C3 == ' ') ? 'x' : 'X';
             C2 = (C2 == 'x') ? 'o' : 'O';
         }
+    }
+
+    int heuristic(const GameMap &field)
+    {
+        int n = field.size() - 1;
+        int m = field[0].size() - 1;
+        int i, j;
+        std::vector<std::tuple<int, int>> boxPos;
+        std::vector<std::tuple<int, int>> tarPos;
+
+        #pragma omp declare reduction (\
+            merge : std::vector<std::tuple<int, int>> : \
+            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
+        )
+
+        #pragma omp parallel default(none) shared(i, j, n, m, field, boxPos, tarPos)
+        {
+            #pragma omp for collapse(2) reduction(merge : boxPos) reduction(merge : tarPos)
+            for (i = 1; i < n; i++) {
+                for (j = 1; j < m; j++) {
+                    if (field[i][j] == 'x')
+                            boxPos.emplace_back(i, j);
+                    else if (field[i][j] == '.' || field[i][j] == 'O')
+                            tarPos.emplace_back(i, j);
+                }
+            }
+        }
+
+        int b = boxPos.size();
+        int t = tarPos.size();
+        int h = 0;
+
+        for (i = 0; i < b; i++) {
+            int bx = std::get<0>(boxPos[i]);
+            int by = std::get<1>(boxPos[i]);
+            int dist = INT_MAX;
+
+            #pragma omp parallel default(none) shared(i, j, t, bx, by, dist, boxPos, tarPos)
+            {
+                #pragma omp for private(j) reduction(min : dist)
+                for (j = 0; j < t; j++) {
+                    int tx = std::get<0>(tarPos[i]);
+                    int ty = std::get<1>(tarPos[i]);
+
+                    dist = std::abs(bx - tx) + std::abs(by - ty);
+                }
+            }
+
+            h += dist;
+        }
+
+
+        return -h;
     }
 
     bool isSolution(const GameMap &field)
@@ -136,36 +224,30 @@ public:
     std::string solve()
     {
         boost::unordered_set<GameMap, boost::hash<GameMap>> visited;
-        std::queue<State> stateQueue;
+        std::priority_queue<State> stateQueue;
         bool foundSol = false;
 
-        stateQueue.emplace(initField, playerPosX, playerPosY, "");
+        stateQueue.emplace(initH, initField, playerPosX, playerPosY, "");
         visited.insert(initField);
 
-        int iter_num = 0;
+#ifdef DEBUG
+        int iterNum = 0;
+#endif
         while(!stateQueue.empty() && !foundSol) {
-            iter_num++;
-            State currState = stateQueue.front();
+#ifdef DEBUG
+            iterNum++;
+#endif
+            State currState = stateQueue.top();
             stateQueue.pop();
-            /*
-            #ifdef DEBUG
-                std::cout << "Field:\n";
-                for (auto &r : newField) {
-                    for (auto &c : r) std::cout << c;
-                    std::cout << '\n';
-                }
-                std::cout << "PlayerPos: " << x+dx << ' ' << y+dy << ' ';
-                std::cout << "actionSeq: " << actionSeq+key;
-            #endif
-            */
 
-            GameMap field = std::get<0>(currState);
-            int x = std::get<1>(currState);
-            int y = std::get<2>(currState);
-            std::string actionSeq = std::get<3>(currState);
+            int h = std::get<0>(currState);
+            GameMap field = std::get<1>(currState);
+            int x = std::get<2>(currState);
+            int y = std::get<3>(currState);
+            std::string actionSeq = std::get<4>(currState);
 
             #pragma omp parallel default(none) \
-            shared(std::cout, ans, actionSeq, direction, field, x, y, visited, stateQueue, foundSol)
+            shared(ans, actionSeq, direction, field, x, y, visited, stateQueue, foundSol, h)
             {
                 int i, dx, dy;
                 char key;
@@ -202,7 +284,8 @@ public:
                         if (!isDeadlock(newField, x + dx, y + dy, dx, dy)) {
                             #pragma omp critical
                             {
-                                stateQueue.emplace(newField, x + dx, y + dy, actionSeq + key);
+                                int newH = h + heuristic(newField);
+                                stateQueue.emplace(newH, newField, x + dx, y + dy, actionSeq + key);
                             }
                         }
                     }
@@ -210,62 +293,17 @@ public:
             }
         }
 
-        std::cout << "Iter num: " << iter_num << '\n';
+#ifdef DEBUG
+        std::cout << "iterNum: " << iterNum << '\n';
+#endif
 
         return ans;
     }
 
-#ifdef DEBUG
-    void debug()
-    {
-        using std::cout;
-
-        cout << "initField:\n";
-        for (const auto &r : initField) {
-            for (const auto &c : r) {
-                cout << c;
-            }
-            cout << '\n';
-        }
-
-        cout << "Direction: ";
-        for (const auto &d : direction) {
-            cout << std::get<0>(d) << ',' << std::get<1>(d) << ','<< std::get<2>(d);
-            cout << "   ";
-        }
-        cout << '\n';
-
-        cout << "playerPos: " << playerPosX << ',' << playerPosY << '\n';
-        cout << "isSolution: " << isSolution(initField) << '\n';
-        cout << "isDeadlock: " << isDeadlock(initField, playerPosX, playerPosY, 0, 0) << '\n';
-
-        for (int i = 0; i < 4; i++) {
-            int dx = std::get<1>(direction[i]);
-            int dy = std::get<2>(direction[i]);
-
-            if (isValidStep(initField, playerPosX, playerPosY, dx, dy)) {
-                GameMap field = initField;
-                makeStep(field, playerPosX, playerPosY, dx, dy);
-                cout << "newField:\n";
-                for (const auto &r : field) {
-                    for (const auto &c : r) {
-                        cout << c;
-                    }
-                    cout << '\n';
-                }
-                cout << "isSolution: " << isSolution(field) << '\n';
-                cout << "isDeadlock: " << isDeadlock(field, playerPosX, playerPosY, dx, dy) << '\n';
-            }
-        }
-
-        cout << "\n\n\n";
-    }
-#endif
-
 private:
     std::string ans;
     GameMap initField;
-    int playerPosX, playerPosY;
+    int playerPosX, playerPosY, initH;
     std::vector<std::tuple<char, int, int>> direction;
 };
 
