@@ -3,6 +3,7 @@
 \usepackage{algpseudocode}
 \usepackage{amsmath}
 \usepackage{fontspec}
+\usepackage{hyperref}
 
 \setmainfont{Open Sans}
 \setmonofont{Hack}
@@ -16,7 +17,8 @@
 
     \section{Problem Description}
         In the game Sokoban, the player is able to push boxes in the direction of movement.
-        The goal is to push all boxes onto target tiles.
+        The goal is to push all boxes onto target tiles. 
+        \href{http://lms.nthu.edu.tw/course.php?courseID=43477&f=hw&hw=214237}{(Homework link)}.
         \paragraph{Input}
             The map of a game in a text file, where the each character represents a tile.
             \begin{itemize}
@@ -26,7 +28,6 @@
                 \item \texttt{o}: The player. Capitalized (\texttt{O}) when it is stepping on a target tile.
                 \item \texttt{x}: A box. Capitalized (\texttt{X}) when it is pushed onto a target tile.
             \end{itemize}
-
         \paragraph{Output}
             A sequence of actions, represented in \texttt{WASD}.
 
