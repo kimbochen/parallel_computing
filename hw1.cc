@@ -8,6 +8,8 @@
 #include <sstream>
 #include <stack>
 #include <string>
+#include <tbb/concurrent_unordered_set.h>
+#include <tbb/concurrent_vector.h>
 #include <tuple>
 #include <vector>
 
@@ -15,7 +17,7 @@ using Position = std::tuple<int, int>;
 using Move = std::tuple<char, int, int>;
 using Grid = std::vector<std::vector<char>>;
 using Substate = std::tuple<int, int, std::string, int, int>;
-using PosTable = boost::unordered_set<Position, boost::hash<Position>>; 
+using PosTable = tbb::concurrent_unordered_set<Position, boost::hash<Position>>; 
 
 enum PositionIndex {X, Y};
 enum SubstateIndex {SX, SY, SSEQ, SDX, SDY};
@@ -36,17 +38,12 @@ public:
         n = initMap.size() - 1;
         m = initMap[0].size() - 1;
 
-        #pragma omp declare reduction (\
-            merge : std::vector<Position> : \
-            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
-        )
-
         #pragma omp parallel default(none) \
         shared(initMap, n, m, playerX, playerY, targetPos)
         {
             int i, j;
 
-            #pragma omp for collapse(2) private(i, j) reduction(merge : targetPos)
+            #pragma omp for collapse(2) private(i, j)
             for (i = 0; i < n; i++) {
                 for (j = 0; j < m; j++) {
                     if (initMap[i][j] == 'o' || initMap[i][j] == 'O') {
@@ -75,13 +72,13 @@ public:
         };
     }
 
-    std::vector<Substate> getSubstates(const Grid& gameMap, int x, int y)
+    tbb::concurrent_vector<Substate> getSubstates(const Grid& gameMap, int x, int y)
     {
         enum QueueIndex {QX, QY, SEQ};
 
-        std::vector<Substate> substates;
         std::queue<std::tuple<int, int, std::string>> Q;
-        boost::unordered_set<Position, boost::hash<Position>> visited;
+        tbb::concurrent_unordered_set<Position, boost::hash<Position>> visited;
+        tbb::concurrent_vector<Substate> substates;
 
         Q.emplace(x, y, "");
         visited.insert({x, y});
@@ -92,23 +89,36 @@ public:
             std::string aseq = std::get<SEQ>(Q.front());
             Q.pop();
 
-            for (int i = 0; i < 4; i++) {
-                int dx = std::get<DX>(moves[i]);
-                int dy = std::get<DY>(moves[i]);
-                char key = std::get<KEY>(moves[i]);
+            #pragma omp parallel default(none) num_threads(4) \
+            shared(moves, x, y, aseq, gameMap, visited, Q, substates)
+            {
+                int i, dx, dy, nx, ny;
+                char key, tile, boxTile;
 
-                int nx = x + dx, ny = y + dy;
-                char tile = gameMap[nx][ny];
+                #pragma omp for private(i, dx, dy, nx, ny, key, tile, boxTile)
+                for (i = 0; i < 4; i++) {
+                    dx = std::get<DX>(moves[i]);
+                    dy = std::get<DY>(moves[i]);
+                    key = std::get<KEY>(moves[i]);
 
-                if ((tile == '.' || tile == ' ') && visited.find({nx, ny}) == visited.end()) {
-                    visited.insert({nx, ny});
-                    Q.emplace(nx, ny, aseq + key);
-                }
-                else if (tile == 'x' || tile == 'X') {
-                    char boxTile = gameMap[nx + dx][ny + dy];
+                    nx = x + dx;
+                    ny = y + dy;
+                    tile = gameMap[nx][ny];
 
-                    if (boxTile != 'x' && boxTile != 'X' && boxTile != '#')
-                        substates.emplace_back(x, y, aseq + key, dx, dy);
+                    if ((tile == '.' || tile == ' ') && visited.find({nx, ny}) == visited.end()) {
+                        visited.insert({nx, ny});
+
+                        #pragma omp critical
+                        {
+                            Q.emplace(nx, ny, aseq + key);
+                        }
+                    }
+                    else if (tile == 'x' || tile == 'X') {
+                        boxTile = gameMap[nx + dx][ny + dy];
+
+                        if (boxTile != 'x' && boxTile != 'X' && boxTile != '#')
+                            substates.emplace_back(x, y, aseq + key, dx, dy);
+                    }
                 }
             }
         }
@@ -137,17 +147,12 @@ public:
 
     int heuristic(const Grid &gmap)
     {
-        std::vector<Position> boxPos;
-
-        #pragma omp declare reduction (\
-            merge : std::vector<Position> : \
-            omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
-        )
+        tbb::concurrent_vector<Position> boxPos;
 
         #pragma omp parallel default(none) shared(n, m, gmap, boxPos)
         {
             int i, j;
-            #pragma omp for collapse(2) private(i, j) reduction(merge : boxPos)
+            #pragma omp for collapse(2) private(i, j)
             for (i = 1; i < n; i++) {
                 for (j = 1; j < m; j++) {
                     if (gmap[i][j] == 'x')
@@ -193,10 +198,9 @@ public:
         {
             int i, dx, dy;
             int nx, ny;
-            bool notVisited;
             char c;
 
-            #pragma omp for private(i, dx, dy, nx, ny, c, notVisited)
+            #pragma omp for private(i, dx, dy, nx, ny, c)
             for (i = 0; i < 4; i++) {
                 dx = std::get<DX>(moves[i]);
                 dy = std::get<DY>(moves[i]);
@@ -204,12 +208,7 @@ public:
                 c = gmap[x + dx][y + dy];
 
                 if (c == 'x' || c == 'X') {
-                    #pragma omp critical
-                    {
-                        notVisited = (visited.find({nx, ny}) == visited.end());
-                    }
-
-                    if (notVisited)
+                    if (visited.find({nx, ny}) == visited.end())
                         blocked[i] = isDeadlock(gmap, visited, nx, ny);
                 }
                 else
@@ -227,7 +226,7 @@ public:
 
         bool solved = false;
         std::priority_queue<State> stateQueue;
-        boost::unordered_set<Grid, boost::hash<Grid>> visited;
+        tbb::concurrent_unordered_set<Grid, boost::hash<Grid>> visited;
 
         stateQueue.emplace(initH, initMap, playerX, playerY, "");
         visited.insert(initMap);
@@ -241,20 +240,19 @@ public:
 
             stateQueue.pop();
 
-            std::vector<Substate> substates = getSubstates(gmap, x, y);
+            tbb::concurrent_vector<Substate> substates = getSubstates(gmap, x, y);
             int ssSize = substates.size();
 
-            #pragma omp parallel default(none) \
+            #pragma omp parallel default(none) num_threads(4) \
             shared(std::cout, ssSize, substates, gmap, h, x, y, actSeq, visited, solved, stateQueue)
             {
                 int i, px, py, dx, dy;
                 int nx, ny, boxX, boxY;
                 std::string newActSeq;
-                bool notVisited;
                 Grid newGmap;
 
                 #pragma omp for \
-                private(i, px, py, dx, dy, nx, ny, boxX, boxY, newActSeq, notVisited, newGmap)
+                private(i, px, py, dx, dy, nx, ny, boxX, boxY, newActSeq, newGmap)
                 for (i = 0; i < ssSize; i++) {
                     px = std::get<SX>(substates[i]);
                     py = std::get<SY>(substates[i]);
@@ -281,14 +279,8 @@ public:
                         }
                     }
 
-                    #pragma omp critical
-                    {
-                        notVisited = (visited.find(newGmap) == visited.end());
-                        if (notVisited) visited.insert(newGmap);
-                    }
-
-                    if (notVisited) {
-                        boost::unordered_set<Position, boost::hash<Position>> v;
+                    if (visited.find(newGmap) == visited.end()) {
+                        tbb::concurrent_unordered_set<Position, boost::hash<Position>> v;
 
                         if (newGmap[boxX][boxY] == 'X' || !isDeadlock(newGmap, v, boxX, boxY)) {
                             int newH = h + heuristic(newGmap);
@@ -297,6 +289,8 @@ public:
                                 stateQueue.emplace(newH, newGmap, nx, ny, actSeq + newActSeq);
                             }
                         }
+
+                        visited.insert(newGmap);
                     }
                 }
             }
@@ -309,8 +303,8 @@ private:
     int playerX, playerY;
     int initH;
     int targetNum;
-    std::vector<Position> targetPos;
-    std::vector<Move> moves;
+    tbb::concurrent_vector<Position> targetPos;
+    tbb::concurrent_vector<Move> moves;
 };
 
 int main(int argc, char* argv[])
