@@ -92,23 +92,42 @@ public:
             std::string aseq = std::get<SEQ>(Q.front());
             Q.pop();
 
-            for (int i = 0; i < 4; i++) {
-                int dx = std::get<DX>(moves[i]);
-                int dy = std::get<DY>(moves[i]);
-                char key = std::get<KEY>(moves[i]);
+            #pragma omp declare reduction (\
+                merge : std::vector<Substate> : \
+                omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end())\
+            )
 
-                int nx = x + dx, ny = y + dy;
-                char tile = gameMap[nx][ny];
+            #pragma omp parallel default(none) num_threads(4) \
+            shared(moves, x, y, aseq, gameMap, visited, Q, substates)
+            {
+                int i, dx, dy, nx, ny;
+                char key, tile, boxTile;
 
-                if ((tile == '.' || tile == ' ') && visited.find({nx, ny}) == visited.end()) {
-                    visited.insert({nx, ny});
-                    Q.emplace(nx, ny, aseq + key);
-                }
-                else if (tile == 'x' || tile == 'X') {
-                    char boxTile = gameMap[nx + dx][ny + dy];
+                #pragma omp for reduction(merge : substates) \
+                private(i, dx, dy, nx, ny, key, tile, boxTile)
+                for (i = 0; i < 4; i++) {
+                    dx = std::get<DX>(moves[i]);
+                    dy = std::get<DY>(moves[i]);
+                    key = std::get<KEY>(moves[i]);
 
-                    if (boxTile != 'x' && boxTile != 'X' && boxTile != '#')
-                        substates.emplace_back(x, y, aseq + key, dx, dy);
+                    nx = x + dx, ny = y + dy;
+                    tile = gameMap[nx][ny];
+
+                    if ((tile == '.') || (tile == ' ')) {
+                        #pragma omp critical
+                        {
+                            if (visited.find({nx, ny}) == visited.end()) {
+                                visited.insert({nx, ny});
+                                Q.emplace(nx, ny, aseq + key);
+                            }
+                        }
+                    }
+                    else if (tile == 'x' || tile == 'X') {
+                        boxTile = gameMap[nx + dx][ny + dy];
+
+                        if (boxTile != 'x' && boxTile != 'X' && boxTile != '#')
+                            substates.emplace_back(x, y, aseq + key, dx, dy);
+                    }
                 }
             }
         }
@@ -244,7 +263,7 @@ public:
             std::vector<Substate> substates = getSubstates(gmap, x, y);
             int ssSize = substates.size();
 
-            #pragma omp parallel default(none) \
+            #pragma omp parallel default(none) num_threads(4) \
             shared(std::cout, ssSize, substates, gmap, h, x, y, actSeq, visited, solved, stateQueue)
             {
                 int i, px, py, dx, dy;

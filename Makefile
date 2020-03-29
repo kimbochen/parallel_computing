@@ -19,7 +19,8 @@ hw1: $(TARGET).cc
 	$(CXX) $^ $(CXXFLAGS) -o $@
 
 run: hw1
-	./hw1 samples/01.txt
+	./hw1 samples/04.txt
+	./hw1 samples/05.txt
 
 clean:
 	rm -rf $(TARGET)
