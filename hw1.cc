@@ -8,9 +8,6 @@
 #include <sstream>
 #include <stack>
 #include <string>
-#ifdef TBB
-#include <tbb/concurrent_unordered_set.h>
-#endif
 #include <tuple>
 #include <vector>
 
@@ -84,11 +81,7 @@ public:
 
         std::vector<Substate> substates;
         std::queue<std::tuple<int, int, std::string>> Q;
-#ifdef TBB
-        tbb::concurrent_unordered_set<Position, boost::hash<Position>> visited;
-#else
         boost::unordered_set<Position, boost::hash<Position>> visited;
-#endif
 
         Q.emplace(x, y, "");
         visited.insert({x, y});
@@ -171,7 +164,8 @@ public:
             int by = std::get<1>(boxPos[i]);
             int dist = INT_MAX;
 
-            #pragma omp parallel default(none) shared(i, targetNum, bx, by, dist, boxPos, targetPos)
+            #pragma omp parallel default(none) \
+            shared(i, targetNum, bx, by, dist, boxPos, targetPos)
             {
                 int j;
                 #pragma omp for private(j) reduction(min : dist)
@@ -195,19 +189,32 @@ public:
 
         bool blocked[4];
 
-        for (int i = 0; i < 4; i++) {
-            int dx = std::get<DX>(moves[i]);
-            int dy = std::get<DY>(moves[i]);
-            int nx = x + dx, ny = y + dy;
-            char c = gmap[x + dx][y + dy];
+        #pragma omp parallel default(none) shared(gmap, visited, x, y, blocked, moves)
+        {
+            int i, dx, dy;
+            int nx, ny;
+            bool notVisited;
+            char c;
 
-            if (c == 'x' || c == 'X') {
-                if (visited.find({nx, ny}) == visited.end()) {
-                    blocked[i] = isDeadlock(gmap, visited, nx, ny);
+            #pragma omp for private(i, dx, dy, nx, ny, c, notVisited)
+            for (i = 0; i < 4; i++) {
+                dx = std::get<DX>(moves[i]);
+                dy = std::get<DY>(moves[i]);
+                nx = x + dx, ny = y + dy;
+                c = gmap[x + dx][y + dy];
+
+                if (c == 'x' || c == 'X') {
+                    #pragma omp critical
+                    {
+                        notVisited = (visited.find({nx, ny}) == visited.end());
+                    }
+
+                    if (notVisited)
+                        blocked[i] = isDeadlock(gmap, visited, nx, ny);
                 }
+                else
+                    blocked[i] = (c == '#');
             }
-            else
-                blocked[i] = (c == '#');
         }
 
         return ((blocked[W] || blocked[S]) && (blocked[A] || blocked[D]));
@@ -220,11 +227,7 @@ public:
 
         bool solved = false;
         std::priority_queue<State> stateQueue;
-#ifdef TBB
-        tbb::concurrent_unordered_set<Grid, boost::hash<Grid>> visited;
-#else
         boost::unordered_set<Grid, boost::hash<Grid>> visited;
-#endif
 
         stateQueue.emplace(initH, initMap, playerX, playerY, "");
         visited.insert(initMap);
@@ -247,10 +250,11 @@ public:
                 int i, px, py, dx, dy;
                 int nx, ny, boxX, boxY;
                 std::string newActSeq;
+                bool notVisited;
                 Grid newGmap;
 
                 #pragma omp for \
-                private(i, px, py, dx, dy, nx, ny, boxX, boxY, newActSeq, newGmap)
+                private(i, px, py, dx, dy, nx, ny, boxX, boxY, newActSeq, notVisited, newGmap)
                 for (i = 0; i < ssSize; i++) {
                     px = std::get<SX>(substates[i]);
                     py = std::get<SY>(substates[i]);
@@ -273,21 +277,26 @@ public:
                         #pragma omp critical
                         {
                             std::cout << actSeq + newActSeq << '\n';
+                            solved = true;
                         }
-                        solved = true;
                     }
 
-                    if (visited.find(newGmap) == visited.end()) {
+                    #pragma omp critical
+                    {
+                        notVisited = (visited.find(newGmap) == visited.end());
+                        if (notVisited) visited.insert(newGmap);
+                    }
+
+                    if (notVisited) {
                         boost::unordered_set<Position, boost::hash<Position>> v;
 
                         if (newGmap[boxX][boxY] == 'X' || !isDeadlock(newGmap, v, boxX, boxY)) {
+                            int newH = h + heuristic(newGmap);
                             #pragma omp critical
                             {
-                                stateQueue.emplace(h + heuristic(newGmap), newGmap, nx, ny, actSeq + newActSeq);
+                                stateQueue.emplace(newH, newGmap, nx, ny, actSeq + newActSeq);
                             }
                         }
-
-                        visited.insert(newGmap);
                     }
                 }
             }

@@ -1,10 +1,14 @@
-CXX=g++-9
-
+# Boost library directories
 HEADER_DIR=/usr/local/include/
 LIB_DIR=/usr/local/lib
 
+# Library flags
+BOOST= -I$(HEADER_DIR) -L$(LIB_DIR)
 OMP=-Xpreprocessor -fopenmp -lomp
-CXXFLAGS=-std=c++17 -I$(HEADER_DIR) -L$(LIB_DIR) $(OMP) -Wall -Werror
+
+# All arguments
+CXX=g++-9
+CXXFLAGS=-std=c++17 -O3 -Wall -Werror $(OMP) $(BOOST)
 TARGET = hw1
 
 .PHONY: clean
@@ -12,14 +16,11 @@ TARGET = hw1
 all: hw1
 
 hw1: $(TARGET).cc
-	$(CXX) $^ $(CXXFLAGS) -O3 -o $@
+	$(CXX) $^ $(CXXFLAGS) -o $@
 
 run: hw1
 	./hw1 samples/01.txt
 
-test: $(TARGET).cc
-	$(CXX) $^ $(CXXFLAGS) -O0 -DDEBUG -o $@
-
 clean:
-	rm -rf $(TARGET) test
+	rm -rf $(TARGET)
 
