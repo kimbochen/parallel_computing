@@ -9,7 +9,7 @@ OMP=-Xpreprocessor -fopenmp -lomp
 # All arguments
 CXX=g++-9
 CXXFLAGS=-std=c++17 -O3 -Wall -Werror $(OMP) $(BOOST)
-TARGET = hw1
+TARGET=hw1
 
 .PHONY: clean
 
@@ -19,7 +19,6 @@ hw1: $(TARGET).cc
 	$(CXX) $^ $(CXXFLAGS) -o $@
 
 run: hw1
-	./hw1 samples/04.txt
 	./hw1 samples/05.txt
 
 clean:
