@@ -1,0 +1,82 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{fontspec}
+
+\setmainfont{Open Sans}
+\setmonofont{Hack}
+
+\title{Homework 1 - Sokoban}
+\author{106062202}
+\date{\today}
+
+\begin{document}
+    \maketitle
+
+    \section{Problem Description}
+
+        \subsection{Input}
+            The map of a game in a text file, where the each character represents a tile.
+            \begin{itemize}
+                \item \texttt{ } (space): A regular tile.
+                \item \texttt{\#}: A wall block.
+                \item \texttt{.}: A target tile onto which the box is to be pushed.
+                \item \texttt{o}: The player.
+                \item \texttt{x}: A box.
+                \item \texttt{O}: The player stepping on a target tile.
+                \item \texttt{X}: A box pushed onto a target tile.
+            \end{itemize}
+
+        \subsection{Output}
+            The goal is to find a sequence of actions that pushes all boxes onto target tiles.
+            Output the sequence of actions, represented in WASD.
+
+    \pagebreak
+
+    \section{Implementation}
+
+        \subsection{Algorithm: Heuristic BFS}
+            \begin{algorithmic}[1] 
+                \State $stateQueue \gets (H(initState), initState)$ \label{stateQueue}
+                \State $visited \gets initMap$
+                \While {$stateQueue$ is not empty}
+                    \State $currState \gets stateQueue.pop()$
+                    \State $substateList \gets findSubstates(currState)$ \label{findSubstates}
+                    \For {$substate \in substateList$}
+                        \State $newState \gets pushBox(currState, substate)$ \label{Update}
+                        \If {$newState$ is solved}
+                            \State return $currState.seq + substate.seq$ \label{seq}
+                        \EndIf
+                        \If {$newState \notin visited$}
+                            \State $visited \gets newMap$
+                            \If {pushed box is not \texttt{'X'} \textbf{AND} $newState$ is not deadlock} \label{deadlock}
+                                \State $stateQueue \gets (H(newState), newState)$
+                            \EndIf
+                        \EndIf
+                    \EndFor
+                \EndWhile
+            \end{algorithmic}
+
+            \begin{itemize}
+                \item In line \ref{stateQueue}, a priority queue is used to 
+                    prioritize states that are heuristically closer to solution.
+                \item In line \ref{findSubstates}, function \texttt{findSubstates} searches and returns
+                    paths to pushable boxes (substates).
+                \item In line \ref{Update}, function \texttt{pushBox} creates a new state by 
+                    pushing the adjacent box in the direction substate specified.
+                \item In line \ref{seq}, combining the action sequences of \texttt{currState} 
+                    and \texttt{substate} that achieved the goal gives the solution.
+            \end{itemize}
+
+        \subsection{Finding Substates}
+
+        \subsection{Heuristics}
+
+        \subsection{Deadlock Detection}
+
+    \section{Difficulties and Solution}
+
+    \section{Pthread vs. OpenMP}
+
+\end{document}
