@@ -1,4 +1,4 @@
-\documentclass[a4paper, 11pt]{article}
+\documentclass[a4paper, 10pt]{article}
 
 \usepackage{algpseudocode}
 \usepackage{amsmath}
@@ -15,28 +15,24 @@
     \maketitle
 
     \section{Problem Description}
-
-        \subsection{Input}
+        In the game Sokoban, the player is able to push boxes in the direction of movement.
+        The goal is to push all boxes onto target tiles.
+        \paragraph{Input}
             The map of a game in a text file, where the each character represents a tile.
             \begin{itemize}
                 \item \texttt{ } (space): A regular tile.
                 \item \texttt{\#}: A wall block.
                 \item \texttt{.}: A target tile onto which the box is to be pushed.
-                \item \texttt{o}: The player.
-                \item \texttt{x}: A box.
-                \item \texttt{O}: The player stepping on a target tile.
-                \item \texttt{X}: A box pushed onto a target tile.
+                \item \texttt{o}: The player. Capitalized (\texttt{O}) when it is stepping on a target tile.
+                \item \texttt{x}: A box. Capitalized (\texttt{X}) when it is pushed onto a target tile.
             \end{itemize}
 
-        \subsection{Output}
-            The goal is to find a sequence of actions that pushes all boxes onto target tiles.
-            Output the sequence of actions, represented in WASD.
-
-    \pagebreak
+        \paragraph{Output}
+            A sequence of actions, represented in \texttt{WASD}.
 
     \section{Implementation}
 
-        \subsection{Algorithm: Heuristic BFS}
+        \subsection{Overall Algorithm}
             \begin{algorithmic}[1] 
                 \State $stateQueue \gets (H(initState), initState)$ \label{stateQueue}
                 \State $visited \gets initMap$
@@ -70,13 +66,124 @@
             \end{itemize}
 
         \subsection{Finding Substates}
+            \begin{algorithmic}[1]
+                \State $Queue \gets \{x, y, ""\}$ \label{queue}
+                \State $visited \gets \{x, y\}$
+                \While{$Queue$ is not empty}
+                    \State $x, y, seq \gets Queue.pop()$
+                    \For{$move \in$ 4 directions} \label{move}
+                        \State $nx \gets x + move.x, ny \gets y + move.y$
+                        \State $tile \gets gameMap[nx][ny]$
+                        \If{$tile$ is walkable \textbf{AND} $\{nx, ny\} \notin visited$}
+                            \State $visited \gets \{nx, ny\}$
+                            \State $Queue \gets \{nx, ny, seq + move.key\}$
+                        \ElsIf{$tile$ is a box \textbf{AND} box is pushable}
+                            \State $substates \gets \{nx, ny\}$
+                        \EndIf
+                    \EndFor
+                \EndWhile
+                \State \Return $substates$
+            \end{algorithmic}
+
+            \begin{itemize}
+                \item This is a typical BFS Search algorithm to find all paths to pushable boxes.
+                \item In line \ref{queue}, \texttt{Queue} contains \texttt{substate}s, 
+                    which consists of the player's position and the action sequence to arrive there.
+                \item In line \ref{move}, \texttt{move} includes the direction and the action key.
+            \end{itemize}
 
         \subsection{Heuristics}
 
+            \subsubsection{Description}
+                A heuristic is an approximating index of how near a \texttt{state} is to solution.
+                Given the index, we can pick \texttt{state}s with higher possiblity to be solved, 
+                in an attempt to find the solution faster.
+
+            \subsubsection{Formula}
+                \begin{equation*}
+                    \sum_{bp \in boxPos} min_{tp \in targetPos} (|tp_x - bp_x| + |tp_y - bp_y|)
+                \end{equation*}
+
+                \begin{itemize}
+                    \item $bp$ is the position of an unsolved box.
+                    \item $tp$ is the position of a target position.
+                    \item The index is the sum of the minimum of all Hamiltonian distances 
+                        from targets to unsolved boxes.
+                \end{itemize}
+
         \subsection{Deadlock Detection}
+            \begin{algorithmic}[1]
+                \Function{isDeadlock}{gameMap, visited, x, y}
+                    \State $visited \gets \{x, y\}$
+                    \For{$move \in$ 4 directions}
+                        \State $nx \gets x + move.x, ny \gets y + move.y$
+                        \If{$gameMap[nx][ny]$ is a box \textbf{AND} $\notin visited$}
+                            \State $blocked[move.key] \gets isDeadlock(gameMap, visited, nx, ny)$ \label{recursion}
+                        \Else
+                            \State $blocked[move.key] \gets (gameMap[nx][ny] \text{ is wall})$ \label{base}
+                        \EndIf
+                    \EndFor
+
+                    \State \Return $(blocked[W] \textbf{ OR } blocked[S]) \textbf{ AND } 
+                        (blocked[A] \textbf{ OR } blocked[D])$ \label{blocked}
+                \EndFunction
+            \end{algorithmic}
+
+            \begin{itemize}
+                \item This is a recursive algorithm to check for deadlock. 
+                    The idea is for a tile, it is movable only if its depending neighbors are movable.
+                \item In line \ref{recursion}, we explore the box tiles, which the current tile depends on to move.
+                \item In line \ref{base}, a tile is unmovable only if it is a wall block.
+                \item In line \ref{blocked}, a tile is in deadlock if two adjacent neighbors (e.g. WA, SD) are blocked.
+            \end{itemize}
+        
+        \subsection{Parallelization}
+            Since the algorithm includes multiple explorations of its neighbors, 
+            almost all \texttt{for} loops are parellelized. 
+            However, recording data structures (i.e. \texttt{visited}) and queues is not parallelized, 
+            so they are put in critical sections.
 
     \section{Difficulties and Solution}
+        \paragraph{Nature of the problem}
+            Sokoban solving is a NP-Hard PSPACE-complete problem. Naturally, it is challenging.
+        \paragraph{Designing Data Structures}
+            A data structure for storing state information should be readable yet fast in execution.
+            In my experience, making it object-oriented takes great toll on the performance.
+        \paragraph{Parallelization}
+            Parallelization requires careful design of algorithms. \\
+            It is also exceptionally difficult to debug due to all threads run in parallel, 
+            making debug message unreadable.
+        \paragraph{Depth of Substates}
+            BFS reaches all reachable boxes no matter how many steps are taken.
+            This creates many redundant substates that are too deep, thus cutting the performance.
+            However, limiting the depth may make searching for long answers 
+            taking more iterations or even impossible.
+        \paragraph{Designing Heuristic}
+            Heuristics need to be accurate while not being an overhead of computation.
+        \paragraph{Designing Deadlock Detection}
+            When designing deadlock detection, I tend to consider way too many cases, 
+            making the algorithm unable to find a solution.
 
     \section{Pthread vs. OpenMP}
+        \subsection{Comparison}
+            \begin{center}
+                \begin{tabular}{|c|c|c|}
+                    \hline
+                    Library & Pthread & OpenMP \\
+                    \hline
+                    Level & low-level, fine-grained control & high-level construct \\
+                    \hline
+                    Scalability & Limited & Highly scalable \\
+                    \hline
+                    Flexiblity & Decent & Limited \\
+                    \hline
+                \end{tabular}
+            \end{center}
 
+        \subsection{Why I Chose OpenMP}
+            With zero-to-none knowledge of low-level thread management, it is impossible to learn and 
+            have decent command of Pthread in 2 weeks, since it takes time to 
+            design and implement the Sokoban algorithm. On the other hand, OpenMP is friendlier in terms of 
+            usage and I happened to finish the tutorial on the weekends after the instructor introduced OpenMP.
+            Thus, OpenMp is the obvious choice.
 \end{document}
