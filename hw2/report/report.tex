@@ -1,0 +1,91 @@
+\documentclass[a4paper, 10pt]{article}
+
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{fontspec}
+\usepackage{hyperref}
+\usepackage[a4paper,margin=3cm]{geometry}
+
+\setmainfont{Open Sans}
+\setmonofont{Hack}
+
+\title{Homework 2 - Mandelbulb Rendering}
+\author{106062202}
+\date{\today}
+
+\begin{document}
+  \maketitle
+
+  \section{Problem Description}
+    Implement a simple raymarching algorithm for rendering the classic Mandelbulb.\\
+    Parallelize the algorithm with MPI and OpenMP.
+
+  \section{Implementation}
+    \subsection{Program Structure}
+      \begin{algorithmic}[1]
+        \State Initialize MPI
+        \State Partition image
+        \State Perform raymarching on subimage
+        \State Call MPI collective routine
+        \State Write PNG file
+        \State Finalize MPI
+      \end{algorithmic}
+
+    \subsection{Partitioning Tasks}
+      \subsubsection{Overview}
+        The idea is to split an image into multiple subimages, 
+        perform calculation separately, and merge subimages into the original image. 
+        Practically, the image is evenly distributed in terms of rows.
+
+      \subsubsection{Implementation}
+        Some varaibles are altered or introduced due to partitioning.
+
+        \paragraph{Raymarching Algorithm}
+          \begin{itemize}
+            \item Since the algorithm now works on a subimage, 
+              \texttt{height} is changed to \texttt{subheight} (The number of rows given).
+            \item The start and end of indicies \texttt{i} and \texttt{j} are the indicies 
+              in the original image.
+          \end{itemize}
+
+        \paragraph{MPI Collective Routine}
+          \begin{itemize}
+            \item \texttt{MPI\_Gatherv} is used to gather all the subimages to one process. 
+              \texttt{MPI\_Gather} is not used because the distribution may not be perfectly even, 
+              resulting in variable-sized sending data.
+            \item \texttt{MPI\_Gatherv} requires arguments such as send data count and offset 
+              in the original image array. Specifically, \texttt{MPI\_Gatherv} requires information on 
+              \textit{all} processes, which needs to be precomputed and stored in arrays.
+          \end{itemize}
+
+    \subsection{Parallelizing Raymarching Algorithm}
+      \subsubsection{Overview}
+        I observed that every pixel is computed independently, 
+        so the computation of tracing and coloring is put into parallel region.
+
+      \subsubsection{Implementation}
+        \begin{itemize}
+          \item The computation of a pixel involves summing the color vector 
+            throughout the iterations of anti-aliasing. Thus a reduction operation is implemented.
+          \item A customized reduction function is needed since \texttt{vec4} is not a primitive type.
+        \end{itemize}
+
+  \section{Analysis}
+    \subsection{Load-Balancing}
+      Sadly, I've observed that distributing in terms of rows is \textbf{terrible} load-balancing, 
+      but had no more time to make improvements.
+      According to my experiments, half of the processes finished in 2 seconds for testcase 3, 
+      while others took 30 seconds.
+
+    \subsection{Scheduling}
+      I have attempted dynamic scheduling and static scheduling in OpenMP.
+      Dynamic scheduling doubled the execution time.
+      Thus, I left it for the compiler to decided.
+
+  \section{Conclusion}
+  \subsection{What I've Learned}
+    \begin{itemize}
+      \item Begin earlier.
+      \item The intracacies of memory in MPI collective routines.
+    \end{itemize}
+\end{document}
