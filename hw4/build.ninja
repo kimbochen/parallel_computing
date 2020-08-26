@@ -1,0 +1,18 @@
+# Compiler flags
+flags = -O3 -std=c++11
+
+rule gcc
+    command = g++ $flags -pg $in -o $out
+
+rule nvcc
+    command = nvcc $flags $in -o $out
+
+build main.o: nvcc cuda_miner.cu
+    flags = $flags -dc
+
+build sha256.o: nvcc sha256.cu
+    flags = $flags -dc
+
+build cuda_miner: nvcc main.o sha256.o
+
+build seq_cuda_miner: gcc cuda_miner.cu sha256.cu

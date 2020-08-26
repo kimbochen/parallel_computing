@@ -1,0 +1,12 @@
+# ninja log v5
+1751	1927	0	cuda_miner	1ade7cc858a3f6ff
+1	360611	0	block.out	c95c691b551c3023
+2608	2686	0	profile.log	87522e181d454b63
+0	930	0	sha256	4b4b4f9c3a09930
+1799	364979	0	nonce.out	6f115f7fb08de74f
+0	1751	0	main.o	e094a8f6c4cd884f
+1	1550	0	sha256.o	158969072b0ac5a9
+0	1751	0	main.o	e094a8f6c4cd884f
+1751	1923	0	cuda_miner	1ade7cc858a3f6ff
+0	1740	0	main.o	e094a8f6c4cd884f
+1741	1913	0	cuda_miner	1ade7cc858a3f6ff

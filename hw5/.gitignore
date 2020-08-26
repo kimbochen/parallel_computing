@@ -1,0 +1,7 @@
+cases/
+nbody
+hw5
+.ninja_deps
+.ninja_log
+*.out
+*.log
